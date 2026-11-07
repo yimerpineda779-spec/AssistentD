@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssistentD</title>
+<link rel="icon" href="marca-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="marca-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="marca.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="marca-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e5b4f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+
+<!-- 1. Mientras el motor enciende -->
+<div id="v-encendiendo" class="vista vista-centro activa">
+  <div class="arranque">
+    <img src="marca.svg" alt="" class="arranque-logo">
+    <p class="arranque-titulo">AssistentD</p>
+    <div class="barra"><span></span></div>
+    <p id="arranque-detalle" class="tenue">Encendiendo el motor…</p>
+  </div>
+</div>
+
+<!-- 2. Primera vez -->
+<div id="v-bienvenida" class="vista">
+  <div class="bienvenida">
+    <aside class="bienvenida-lado">
+      <img src="marca.svg" alt="" class="bienvenida-logo">
+      <h1>Un asistente que aprende cómo eres.</h1>
+      <p>AssistentD lleva tu agenda, recuerda lo que le cuentas y ajusta su forma de hablar a la tuya. Todo se guarda en esta computadora.</p>
+      <ol class="pasos-lista" id="pasos-lista">
+        <li class="hecho-actual">Tu nombre</li>
+        <li>Tu clave de Gemini</li>
+        <li>Un poco sobre ti</li>
+      </ol>
+    </aside>
+
+    <section class="bienvenida-form">
+      <form class="paso visible" data-paso="1">
+        <span class="etiqueta">Paso 1 de 3</span>
+        <h2>¿Cómo te llamas?</h2>
+        <input id="f-nombre" type="text" maxlength="60" placeholder="Nombre y apellido" autocomplete="name" required>
+        <p class="tenue">Así sabrá a quién está ayudando.</p>
+        <button class="boton boton-fuerte" type="submit">Siguiente</button>
+      </form>
+
+      <form class="paso" data-paso="2">
+        <span class="etiqueta">Paso 2 de 3</span>
+        <h2>Conecta tu clave de Gemini</h2>
+        <p>Es gratis y es solo tuya. AssistentD la usa para pensar.</p>
+        <ol class="guia">
+          <li>Abre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e inicia sesión con Google.</li>
+          <li>Pulsa <b>Create API key</b> y copia la clave.</li>
+          <li>Pégala aquí abajo.</li>
+        </ol>
+        <input id="f-clave" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false" required>
+        <p id="f-clave-estado" class="estado-linea"></p>
+        <div class="fila-botones">
+          <button class="boton" type="button" data-volver="1">Atrás</button>
+          <button class="boton boton-fuerte" type="submit" id="b-verificar">Verificar clave</button>
+        </div>
+      </form>
+
+      <form class="paso" data-paso="3">
+        <span class="etiqueta">Paso 3 de 3</span>
+        <h2>Cuéntale algo de ti</h2>
+        <p>¿A qué te dedicas, qué estudias, cómo es tu semana? Es opcional; también lo irá aprendiendo con el uso.</p>
+        <textarea id="f-sobre" rows="4" maxlength="600" placeholder="Ej.: Estudio Ingeniería de Sistemas, tengo clases en la mañana y trabajo los sábados."></textarea>
+        <label class="casilla"><input id="f-avisos" type="checkbox" checked> Mostrar avisos en la pantalla cuando se acerque una actividad</label>
+        <div class="fila-botones">
+          <button class="boton" type="button" data-volver="2">Atrás</button>
+          <button class="boton boton-fuerte" type="submit">Empezar</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
+
+<!-- 3. Panel principal -->
+<div id="v-panel" class="vista">
+  <header class="cabecera">
+    <div class="marca">
+      <img src="marca.svg" alt="">
+      <span>AssistentD</span>
+    </div>
+    <nav class="pestanas-moviles" id="pestanas-moviles">
+      <button data-col="col-dia" class="activa">Día</button>
+      <button data-col="col-charla">Charla</button>
+      <button data-col="col-lado">Más</button>
+    </nav>
+    <div class="cabecera-der">
+      <span id="reloj" class="mono"></span>
+      <span id="modelo" class="pastilla" title="Modelo de IA en uso"></span>
+    </div>
+  </header>
+
+  <main class="rejilla">
+    <!-- Columna del dia -->
+    <section id="col-dia" class="columna col-dia activa">
+      <div class="fecha-grande">
+        <span id="dia-nombre"></span>
+        <strong id="dia-numero"></strong>
+        <span id="dia-mes"></span>
+      </div>
+
+      <div class="semana" id="semana"></div>
+      <div class="semana-nav">
+        <button class="enlace" id="b-sem-ant">‹ Anterior</button>
+        <button class="enlace" id="b-hoy">Hoy</button>
+        <button class="enlace" id="b-sem-sig">Siguiente ›</button>
+      </div>
+
+      <article class="boletin" id="boletin">
+        <div class="boletin-cab">
+          <span class="etiqueta">Tu día</span>
+          <button class="enlace" id="b-boletin" title="Escribir el resumen otra vez">Actualizar</button>
+        </div>
+        <p id="boletin-texto" class="tenue">Preparando tu resumen…</p>
+      </article>
+
+      <div class="linea-tiempo" id="linea-tiempo"></div>
+    </section>
+
+    <!-- Columna de la conversacion -->
+    <section id="col-charla" class="columna col-charla">
+      <div class="charla-cab">
+        <h2>Conversación</h2>
+        <button class="boton boton-chico" id="b-nueva">Nueva</button>
+      </div>
+      <div class="hilo" id="hilo"></div>
+      <div class="atajos" id="atajos"></div>
+      <form class="redactar" id="redactar">
+        <textarea id="entrada" rows="1" placeholder="Escribe lo que necesites…" aria-label="Mensaje"></textarea>
+        <button class="boton boton-fuerte" id="b-enviar" type="submit">Enviar</button>
+      </form>
+    </section>
+
+    <!-- Columna lateral -->
+    <section id="col-lado" class="columna col-lado">
+      <div class="selector" role="tablist">
+        <button class="activa" data-hoja="h-pendientes">Pendientes</button>
+        <button data-hoja="h-notas">Notas</button>
+        <button data-hoja="h-perfil">Sobre ti</button>
+      </div>
+
+      <div class="hoja activa" id="h-pendientes">
+        <form class="mini-form" id="form-tarea">
+          <input id="nueva-tarea" maxlength="200" placeholder="Agregar pendiente…">
+          <select id="prioridad-tarea" aria-label="Prioridad">
+            <option value="1">Alta</option>
+            <option value="2" selected>Media</option>
+            <option value="3">Baja</option>
+          </select>
+        </form>
+        <ul class="lista" id="lista-tareas"></ul>
+      </div>
+
+      <div class="hoja" id="h-notas">
+        <form class="mini-form" id="form-nota">
+          <input id="nueva-nota" maxlength="2000" placeholder="Nota rápida…">
+        </form>
+        <ul class="lista" id="lista-notas"></ul>
+      </div>
+
+      <div class="hoja" id="h-perfil">
+        <div class="perfil-cab">
+          <strong id="perfil-nombre"></strong>
+          <span id="perfil-visto" class="tenue"></span>
+        </div>
+        <h3>Cómo te escribe</h3>
+        <div id="medidores" class="medidores"></div>
+        <h3>Lo que pediste</h3>
+        <div id="preferencias" class="chips"></div>
+        <h3>Lo que sabe de ti</h3>
+        <form class="mini-form" id="form-recuerdo">
+          <input id="nuevo-recuerdo" maxlength="300" placeholder="Enséñale algo…">
+        </form>
+        <ul class="lista" id="lista-recuerdos"></ul>
+        <div class="acciones-perfil">
+          <button class="enlace" id="b-cambiar-clave">Cambiar clave de Gemini</button>
+          <button class="enlace peligro" id="b-reiniciar-estilo">Volver a aprender mi estilo desde cero</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="avisos" class="avisos" aria-live="assertive"></div>
+
+<script src="panel.js"></script>
+</body>
+</html>

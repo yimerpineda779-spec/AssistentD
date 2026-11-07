@@ -1,0 +1,103 @@
+# AssistentD | servicios
+# base      PostgreSQL: agenda, perfil, memoria y tambien los datos internos de n8n
+# esquema   aplica las tablas y funciones (se ejecuta y termina)
+# preparar  registra en n8n la conexion y los flujos (se ejecuta y termina)
+# motor     n8n con los flujos activos
+# puerta    Caddy: entrega el panel y conecta /api con n8n
+
+name: assistentd
+
+x-motor-env: &motor-env
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: base
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_DATABASE: assistentd
+  DB_POSTGRESDB_USER: assistentd
+  DB_POSTGRESDB_PASSWORD: ${CLAVE_BASE:?Falta CLAVE_BASE en el archivo .env}
+  DB_POSTGRESDB_SCHEMA: motor
+  N8N_ENCRYPTION_KEY: ${CLAVE_MOTOR:?Falta CLAVE_MOTOR en el archivo .env}
+  GENERIC_TIMEZONE: ${ZONA:-America/Caracas}
+  TZ: ${ZONA:-America/Caracas}
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+  N8N_PERSONALIZATION_ENABLED: "false"
+  N8N_SECURE_COOKIE: "false"
+  N8N_RUNNERS_ENABLED: "true"
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: "72"
+  WEBHOOK_URL: http://localhost:${PUERTO_MOTOR:-5690}/
+
+services:
+  base:
+    image: postgres:17-alpine
+    container_name: adx-base
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: assistentd
+      POSTGRES_USER: assistentd
+      POSTGRES_PASSWORD: ${CLAVE_BASE:?Falta CLAVE_BASE en el archivo .env}
+      TZ: ${ZONA:-America/Caracas}
+      PGTZ: ${ZONA:-America/Caracas}
+    command: ["postgres", "-c", "timezone=${ZONA:-America/Caracas}"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U assistentd -d assistentd"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    volumes:
+      - adx_datos:/var/lib/postgresql/data
+
+  esquema:
+    image: postgres:17-alpine
+    container_name: adx-esquema
+    restart: "no"
+    depends_on:
+      base:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${CLAVE_BASE}
+      PGTZ: ${ZONA:-America/Caracas}
+    entrypoint: ["sh", "-c", "n=0; until psql -h base -U assistentd -d assistentd -qtAc \"select 1\" >/dev/null 2>&1; do n=$$((n+1)); [ $$n -ge 40 ] && echo \"La base no responde\" && exit 1; sleep 2; done; for f in /sql/*.sql; do echo \"Aplicando $$f\"; psql -h base -U assistentd -d assistentd -v ON_ERROR_STOP=1 -q -f \"$$f\" || exit 1; done"]
+    volumes:
+      - ./base:/sql:ro
+
+  preparar:
+    image: n8nio/n8n:2.45.7
+    container_name: adx-preparar
+    restart: "no"
+    depends_on:
+      esquema:
+        condition: service_completed_successfully
+    environment:
+      <<: *motor-env
+    entrypoint: ["sh", "-c", "tr -d '\\r' < /adx/preparar.sh > /tmp/preparar.sh && sh /tmp/preparar.sh"]
+    volumes:
+      - ./motor:/adx:ro
+
+  motor:
+    image: n8nio/n8n:2.45.7
+    container_name: adx-motor
+    restart: unless-stopped
+    depends_on:
+      preparar:
+        condition: service_completed_successfully
+    environment:
+      <<: *motor-env
+    ports:
+      # Editor de n8n, solo desde esta computadora
+      - "127.0.0.1:${PUERTO_MOTOR:-5690}:5678"
+
+  puerta:
+    image: caddy:2.8-alpine
+    container_name: adx-puerta
+    restart: unless-stopped
+    depends_on:
+      - motor
+    ports:
+      - "127.0.0.1:${PUERTO_PANEL:-7340}:80"
+    volumes:
+      - ./panel:/srv/panel:ro
+      - ./puerta/Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  adx_datos:

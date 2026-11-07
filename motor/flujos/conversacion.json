@@ -1,0 +1,368 @@
+{
+  "id": "adxConversacion1",
+  "name": "AssistentD · Conversación",
+  "nodes": [
+    {
+      "id": "4a13c77a-ee00-49a2-a3bf-e016274bc596",
+      "name": "Nota d866e7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -260
+      ],
+      "parameters": {
+        "content": "## AssistentD | Conversación\nCada mensaje del panel entra por **/adx/conversar**.\n\n1. La base de datos guarda el mensaje, **mide el estilo** de la persona y entrega su contexto (perfil, recuerdos, agenda).\n2. Se arma la consulta para Gemini con ese contexto y el catálogo de herramientas.\n3. **Bucle de herramientas:** si Gemini pide herramientas, la función `nucleo.ejecutar_lote` las ejecuta y el resultado vuelve a Gemini, hasta que responde con texto.\n4. Se guarda la respuesta y se envía al panel.",
+        "width": 560,
+        "height": 300
+      }
+    },
+    {
+      "id": "020e8870-0301-4202-8249-6304397f411c",
+      "name": "Nota 85eac6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        -200
+      ],
+      "parameters": {
+        "content": "### Seguridad\nLa IA nunca escribe SQL. Solo pide herramientas por nombre y la base valida cada dato.",
+        "width": 320,
+        "height": 180,
+        "color": 5
+      }
+    },
+    {
+      "id": "510ff554-99ea-4d9a-8830-70572d61911f",
+      "name": "Llega un mensaje",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        160
+      ],
+      "webhookId": "58bfc7bd-d27f-4c4b-9081-cce8790d9d50",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "adx/conversar",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "595fdcd6-9d43-4ba9-9d88-c7137247ce12",
+      "name": "Cargar contexto",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        220,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.contexto($1) AS ctx;",
+        "options": {
+          "queryReplacement": "={{ String($json.body.texto || '').slice(0, 4000) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "3d052dd3-35fc-4d71-877b-1c496c499db8",
+      "name": "Armar consulta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        160
+      ],
+      "parameters": {
+        "jsCode": "// Arma la consulta para Gemini con todo lo que AssistentD sabe de la persona\nconst c = $input.first().json.ctx || {};\n\nif (!c.clave) {\n  return [{ json: { fase: 'fallo', texto: 'Todavía no tengo una clave de Gemini. Abre \"Sobre ti\" y pulsa \"Cambiar clave de Gemini\".' } }];\n}\n\nconst p = c.perfil || {};\nconst llamar = p.como_llamar || p.nombre || 'la persona';\n\n// 1) Estilo observado en sus mensajes\nconst estilo = [];\nif ((p.mensajes_vistos || 0) >= 2) {\n  if (p.formalidad > 0.65) estilo.push('Escribe con cortesía formal: trátale de usted y cuida la redacción.');\n  else if (p.formalidad < 0.35) estilo.push('Escribe relajado y coloquial, como alguien de confianza; tutéale.');\n  else estilo.push('Tono cercano y neutro; tutéale salvo que pida lo contrario.');\n  if (p.largo_promedio < 45) estilo.push('Sus mensajes son cortos: contesta breve (2 a 4 líneas) salvo que pida detalle.');\n  else if (p.largo_promedio > 140) estilo.push('Escribe mensajes largos: puedes explicar con más detalle.');\n  if (p.emojis > 0.4) estilo.push('Usa emojis con frecuencia, igual que la persona.');\n  else if (p.emojis < 0.1) estilo.push('No uses emojis.');\n  else estilo.push('Algún emoji ocasional está bien.');\n  if (p.entusiasmo > 0.5) estilo.push('Responde con energía y entusiasmo.');\n} else {\n  estilo.push('Aún no conoces su estilo: sé cálido, claro y breve, tuteando.');\n}\n\nconst prefs = Object.entries(p.preferencias || {}).map(([k, v]) => `- ${k}: ${v}`);\nconst recuerdos = (c.recuerdos || []).map((r) => `- [${r.id}] (${r.tema}) ${r.dato}`);\nconst proximos = (c.proximos || []).map((e) =>\n  `- [${e.id}] ${e.dia} ${e.fecha} ${e.hora}-${e.hora_fin} ${e.titulo} (${e.categoria}, prioridad ${e.prioridad}${e.repeticion !== 'no' ? ', se repite ' + e.repeticion : ''})`);\nconst tareas = (c.tareas || []).map((t) => `- [${t.id}] ${t.texto} (prioridad ${t.prioridad}${t.limite ? ', para ' + t.limite : ''})`);\n\nconst sistema = `Eres AssistentD, el asistente personal que vive en la computadora de ${llamar}. Llevas su agenda, recuerdas lo que te cuenta y te adaptas a su manera de ser. No eres un buscador ni un chatbot genérico.\n\nMOMENTO ACTUAL\nHoy es ${c.hoy} ${c.ahora} (zona ${c.zona}).\nPróximos 14 días: ${(c.calendario || []).join(', ')}.\nUsa esa lista para convertir \"mañana\", \"el jueves\" o \"la otra semana\" en fechas exactas. No adivines días de la semana.\n\nQUIÉN ES\nNombre: ${p.nombre || 'sin indicar'}. Llámale \"${llamar}\" de vez en cuando, sin exagerar.\n${p.sobre_mi ? 'Se presentó así: ' + p.sobre_mi : ''}\nLo que has aprendido de esta persona:\n${recuerdos.join('\\n') || '- (todavía nada)'}\n\nCÓMO HABLARLE (aprendido de sus mensajes)\n${estilo.join('\\n')}\n${prefs.length ? 'Preferencias que pidió de forma explícita (mandan sobre lo anterior):\\n' + prefs.join('\\n') : ''}\n\nAGENDA DE LOS PRÓXIMOS 7 DÍAS (el número entre corchetes es el id)\n${proximos.join('\\n') || '- Nada agendado.'}\n\nPENDIENTES ABIERTOS\n${tareas.join('\\n') || '- Ninguno.'}\n\nFORMA DE TRABAJAR\n1. Para guardar, mover o cancelar algo usa siempre las herramientas. Solo confirma un cambio si la herramienta respondió guardado, editado o cancelado en true.\n2. Si falta el día o la hora de una actividad, pregunta antes de guardar. Si no dice cuánto dura, usa 60 minutos. Si no dice cuándo avisar, usa 20 minutos.\n3. Si crear_evento o editar_evento responde \"choque de horario\", explica con qué se cruza y ofrece los huecos sugeridos. Usa forzar=true solo si la persona acepta el cruce.\n4. Si la fecha ya pasó, avísale y pregunta si quiso decir otra.\n5. Para editar o cancelar necesitas el id. Si no está en la agenda de arriba, búscalo con listar_eventos (puedes usar \"buscar\"). Si hay varias coincidencias, pregunta cuál.\n6. Elige categoría y prioridad con criterio: exámenes, entregas y citas médicas van con prioridad 1.\n7. Lo que no tiene hora fija (\"tengo que comprar...\", \"pendiente: ...\") es una tarea: usa agregar_tarea. Las ideas o datos para guardar son notas: guardar_nota.\n8. Cuando la persona cuente algo estable sobre sí misma (gustos, rutina, estudios, trabajo, personas cercanas, metas) guárdalo con recordar_dato, en pocas palabras y en tercera persona, sin pedir permiso. No guardes salud, dinero ni temas delicados. No repitas lo que ya sabes.\n9. Si pide que cambies tu forma de hablar (\"más corto\", \"sin emojis\", \"háblame de usted\", \"con más humor\"), usa ajustar_personalidad y aplícalo desde esta misma respuesta. Si pide que le llames distinto, usa cambiar_nombre.\n10. Al confirmar una actividad di título, día de la semana, fecha (DD/MM), hora y con cuánto aviso. Al mostrar la agenda agrupa por día con listas cortas.\n11. Si ves un día recargado, una entrega cerca o mucho tiempo libre antes de un examen, sugiérelo con tacto, sin sermones.\n12. Puedes conversar de cualquier tema y ayudar con dudas, pero tu fuerte es organizar su tiempo.\n13. Responde siempre en español, en texto simple. Puedes usar **negritas** y listas con \"- \". No uses tablas ni títulos con #.`;\n\n// 2) Historial: Gemini espera que la conversación empiece con la persona\nconst contents = [];\nfor (const m of c.historial || []) {\n  const role = m.rol === 'persona' ? 'user' : 'model';\n  if (!contents.length && role === 'model') continue;\n  const ultimo = contents[contents.length - 1];\n  if (ultimo && ultimo.role === role) ultimo.parts[0].text += '\\n' + m.texto;\n  else contents.push({ role, parts: [{ text: m.texto }] });\n}\nconst entrada = String(c.entrada || '').trim() || 'Hola';\nif (contents.length && contents[contents.length - 1].role === 'user') contents[contents.length - 1].parts[0].text += '\\n' + entrada;\nelse contents.push({ role: 'user', parts: [{ text: entrada }] });\n\n// 3) Herramientas que puede pedir (las ejecuta la base de datos)\nconst S = (description, extra = {}) => ({ type: 'STRING', description, ...extra });\nconst N = (description) => ({ type: 'INTEGER', description });\nconst B = (description) => ({ type: 'BOOLEAN', description });\nconst camposEvento = {\n  titulo: S('Título corto, por ejemplo \"Examen de Física\"'),\n  inicio: S('Fecha y hora de inicio en formato AAAA-MM-DD HH:MM (24 horas, hora local)'),\n  duracion_min: N('Duración en minutos. 60 si no se indica'),\n  detalle: S('Detalles extra: lugar, qué llevar, etc.'),\n  categoria: S('Tipo de actividad', { enum: ['estudio', 'trabajo', 'personal', 'salud', 'social', 'tramite'] }),\n  prioridad: N('1 alta, 2 media, 3 baja'),\n  repeticion: S('Si se repite', { enum: ['no', 'diaria', 'laborables', 'semanal', 'mensual'] }),\n  repetir_hasta: S('Último día de la repetición, AAAA-MM-DD. Vacío si no termina'),\n  aviso_min: N('Minutos antes para avisar. 0 para avisar solo al empezar'),\n  forzar: B('true solo si la persona aceptó guardarlo aunque choque con otra actividad'),\n};\nconst herramientas = [\n  { name: 'crear_evento', description: 'Agenda una actividad con fecha y hora. Revisa choques de horario antes de guardar.',\n    parameters: { type: 'OBJECT', properties: camposEvento, required: ['titulo', 'inicio'] } },\n  { name: 'listar_eventos', description: 'Lista las actividades entre dos fechas, incluyendo las repetitivas.',\n    parameters: { type: 'OBJECT', properties: {\n      desde: S('Inicio AAAA-MM-DD o AAAA-MM-DD HH:MM'), hasta: S('Fin AAAA-MM-DD (incluye ese día completo)'),\n      buscar: S('Texto para filtrar por título o detalle') } } },\n  { name: 'editar_evento', description: 'Cambia una actividad existente. Envía solo los campos que cambian.',\n    parameters: { type: 'OBJECT', properties: { id: N('Id de la actividad'), ...camposEvento }, required: ['id'] } },\n  { name: 'cancelar_evento', description: 'Quita una actividad de la agenda (si es repetitiva, quita toda la serie).',\n    parameters: { type: 'OBJECT', properties: { id: N('Id de la actividad') }, required: ['id'] } },\n  { name: 'buscar_huecos', description: 'Busca espacios libres en un día para encajar algo de cierta duración.',\n    parameters: { type: 'OBJECT', properties: {\n      dia: S('Día AAAA-MM-DD'), duracion_min: N('Minutos que necesita'),\n      desde_hora: S('Hora mínima HH:MM, por defecto 07:00'), hasta_hora: S('Hora máxima HH:MM, por defecto 21:00') }, required: ['dia'] } },\n  { name: 'resumen_dia', description: 'Resumen de un día: actividades, tareas que vencen y espacios libres.',\n    parameters: { type: 'OBJECT', properties: { dia: S('Día AAAA-MM-DD; hoy si se omite') } } },\n  { name: 'agregar_tarea', description: 'Anota un pendiente sin hora fija.',\n    parameters: { type: 'OBJECT', properties: { texto: S('Qué hay que hacer'), prioridad: N('1 alta, 2 media, 3 baja'), limite: S('Fecha límite AAAA-MM-DD, opcional') }, required: ['texto'] } },\n  { name: 'listar_tareas', description: 'Lista los pendientes abiertos.',\n    parameters: { type: 'OBJECT', properties: { incluir_hechas: B('true para incluir los terminados esta semana') } } },\n  { name: 'completar_tarea', description: 'Marca un pendiente como hecho (o lo reabre con deshacer=true).',\n    parameters: { type: 'OBJECT', properties: { id: N('Id del pendiente'), deshacer: B('true para reabrirlo') }, required: ['id'] } },\n  { name: 'borrar_tarea', description: 'Elimina un pendiente.',\n    parameters: { type: 'OBJECT', properties: { id: N('Id del pendiente') }, required: ['id'] } },\n  { name: 'guardar_nota', description: 'Guarda una nota rápida (ideas, datos, listas).',\n    parameters: { type: 'OBJECT', properties: { texto: S('Contenido de la nota') }, required: ['texto'] } },\n  { name: 'buscar_notas', description: 'Busca entre las notas guardadas.',\n    parameters: { type: 'OBJECT', properties: { buscar: S('Texto a buscar; vacío para ver las últimas') } } },\n  { name: 'borrar_nota', description: 'Elimina una nota.',\n    parameters: { type: 'OBJECT', properties: { id: N('Id de la nota') }, required: ['id'] } },\n  { name: 'recordar_dato', description: 'Guarda algo estable que aprendiste de la persona.',\n    parameters: { type: 'OBJECT', properties: {\n      tema: S('Tema', { enum: ['general', 'gustos', 'rutina', 'estudios', 'trabajo', 'personas', 'metas'] }),\n      dato: S('El dato en una frase corta en tercera persona') }, required: ['tema', 'dato'] } },\n  { name: 'olvidar_dato', description: 'Borra algo que habías aprendido, si la persona lo pide o ya no es cierto.',\n    parameters: { type: 'OBJECT', properties: { id: N('Id del dato') }, required: ['id'] } },\n  { name: 'ajustar_personalidad', description: 'Guarda cómo quiere la persona que le hables.',\n    parameters: { type: 'OBJECT', properties: {\n      aspecto: S('Qué se ajusta: largo, trato, emojis, humor, tono u otro'),\n      preferencia: S('La preferencia en pocas palabras, ej. \"respuestas muy cortas\". Vacío para quitarla') }, required: ['aspecto'] } },\n  { name: 'cambiar_nombre', description: 'Cambia cómo llamar a la persona.',\n    parameters: { type: 'OBJECT', properties: { como_llamar: S('Nombre o apodo') }, required: ['como_llamar'] } },\n];\n\nconst peticion = {\n  systemInstruction: { parts: [{ text: sistema }] },\n  contents,\n  tools: [{ functionDeclarations: herramientas }],\n  generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },\n};\n\nreturn [{ json: {\n  fase: 'pensar',\n  api: 'https://generativelanguage.googleapis.com/v1beta',\n  clave: c.clave,\n  modelos: (c.modelos && c.modelos.length) ? c.modelos : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],\n  modelo_idx: 0,\n  vueltas: 0,\n  hubo_cambios: false,\n  peticion,\n} }];\n"
+      }
+    },
+    {
+      "id": "05359743-7902-4b46-ae44-f19a2d611759",
+      "name": "Pensar con Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        160
+      ],
+      "parameters": {
+        "jsCode": "// Envía la conversación a Gemini y decide qué sigue:\n// usar herramientas (vuelve a la base de datos) o responder.\nlet e = $input.first().json;\nif (e.estado) e = e.estado;           // viene de \"Usar herramientas\"\nif (e.fase === 'fallo') return [{ json: e }];\n\n// Resultados de las herramientas de la vuelta anterior\nif (Array.isArray(e.resultados) && e.resultados.length) {\n  e.peticion.contents.push({\n    role: 'user',\n    parts: e.resultados.map((r) => ({\n      functionResponse: { name: r.name, ...(r.id ? { id: r.id } : {}), response: { resultado: r.resultado } },\n    })),\n  });\n}\ndelete e.resultados;\ne.vueltas = (e.vueltas || 0) + 1;\nif (e.vueltas > 8) {\n  return [{ json: { fase: 'respuesta', texto: 'Me enredé con esa petición. ¿Me la dices de otra forma, por partes?', hubo_cambios: !!e.hubo_cambios } }];\n}\n\nconst motivo = (cuerpo) => (cuerpo && cuerpo.error && cuerpo.error.message) || '';\nlet r = null;\nlet problema = '';\nwhile (e.modelo_idx < e.modelos.length) {\n  const modelo = e.modelos[e.modelo_idx];\n  try {\n    r = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${e.api}/models/${modelo}:generateContent`,\n      headers: { 'x-goog-api-key': e.clave, 'Content-Type': 'application/json' },\n      body: e.peticion,\n      json: true,\n      timeout: 90000,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n    });\n  } catch (err) {\n    r = null;\n    problema = 'red';\n  }\n  if (r && r.statusCode === 200) break;\n  if (r) problema = r.statusCode + ' ' + motivo(r.body);\n  // Límite gratuito, saturación o modelo retirado: se prueba el siguiente modelo\n  if (!r || [404, 429, 500, 503].includes(r.statusCode)) { e.modelo_idx += 1; continue; }\n  break;\n}\n\nif (!r || r.statusCode !== 200) {\n  let texto = 'Gemini no respondió esta vez. Inténtalo de nuevo en un momento.';\n  if (problema === 'red') texto = 'No pude conectarme con Gemini. Revisa la conexión a internet.';\n  else if (/API_KEY|API key|PERMISSION|403|401/i.test(problema)) texto = 'Tu clave de Gemini no funciona. Ve a \"Sobre ti\" y cámbiala.';\n  else if (/^429/.test(problema)) texto = 'Llegaste al límite gratuito de Gemini por ahora. Espera un minuto y vuelve a intentarlo.';\n  return [{ json: { fase: 'fallo', texto, detalle: problema } }];\n}\n\nconst candidato = (r.body.candidates || [])[0] || {};\nconst partes = (candidato.content && candidato.content.parts) || [];\nconst llamadas = partes\n  .filter((p) => p.functionCall)\n  .map((p) => ({ name: p.functionCall.name, args: p.functionCall.args || {}, id: p.functionCall.id || null }));\n\nif (llamadas.length) {\n  e.peticion.contents.push(candidato.content);   // se devuelve tal cual (incluye firmas de razonamiento)\n  return [{ json: { ...e, fase: 'herramientas', llamadas } }];\n}\n\nlet texto = partes.filter((p) => p.text && !p.thought).map((p) => p.text).join('').trim();\nif (!texto) {\n  texto = candidato.finishReason === 'SAFETY'\n    ? 'Prefiero no responder a eso. ¿Te ayudo con otra cosa?'\n    : 'Listo. ¿Algo más?';\n}\nreturn [{ json: { fase: 'respuesta', texto, hubo_cambios: !!e.hubo_cambios, modelo: e.modelos[e.modelo_idx] } }];\n"
+      }
+    },
+    {
+      "id": "bdaf0c5f-7b89-4480-9e5f-068aa66ea80f",
+      "name": "¿Pidió herramientas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3a075a7e-cce2-401c-9984-56c08be6e74d",
+              "leftValue": "={{ $json.fase }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "herramientas"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "167599b8-e9ca-4c8b-ac18-dc0651d0f102",
+      "name": "Usar herramientas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        900,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.ejecutar_lote($1::jsonb) AS estado;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "526d1a94-86d4-4953-9cd4-8b168c650e01",
+      "name": "¿Hay respuesta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "58019e7f-c5a7-4c63-bb66-642e0cadd8d6",
+              "leftValue": "={{ $json.fase }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "respuesta"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "62ff2918-3f36-4fdb-a9b6-d771065f88e7",
+      "name": "Guardar respuesta",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        1340,
+        40
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.guardar_respuesta($1) AS r, $1::text AS respuesta, $2::boolean AS hubo_cambios;",
+        "options": {
+          "queryReplacement": "={{ $json.texto }}, {{ $json.hubo_cambios }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "9b112c96-aaf3-49d5-947d-64052de999d9",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        40
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { respuesta: $json.respuesta, hubo_cambios: $json.hubo_cambios } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "6d21c18e-526f-459d-bf5e-fe4b8956b367",
+      "name": "Responder problema",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1340,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { respuesta: $json.texto, error: true } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Llega un mensaje": {
+      "main": [
+        [
+          {
+            "node": "Cargar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar contexto": {
+      "main": [
+        [
+          {
+            "node": "Armar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar consulta": {
+      "main": [
+        [
+          {
+            "node": "Pensar con Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pensar con Gemini": {
+      "main": [
+        [
+          {
+            "node": "¿Pidió herramientas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Pidió herramientas?": {
+      "main": [
+        [
+          {
+            "node": "Usar herramientas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Hay respuesta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usar herramientas": {
+      "main": [
+        [
+          {
+            "node": "Pensar con Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay respuesta?": {
+      "main": [
+        [
+          {
+            "node": "Guardar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder problema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "607b98b6-3f92-4298-a2cd-6871273b5dec",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

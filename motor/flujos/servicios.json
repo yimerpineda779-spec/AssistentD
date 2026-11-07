@@ -1,0 +1,481 @@
+{
+  "id": "adxServicios0001",
+  "name": "AssistentD · Servicios del panel",
+  "nodes": [
+    {
+      "id": "e57fde01-b8db-4fac-bf4e-75ff226b8a03",
+      "name": "Nota da90a4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -320
+      ],
+      "parameters": {
+        "content": "## AssistentD | Servicios del panel\nEndpoints que usa la interfaz. Caddy traduce `/api/x` a `/webhook/adx/x`.\n\n- **salud**: el lanzador espera esta respuesta antes de abrir el panel\n- **panel**: agenda de la semana, pendientes, notas y perfil\n- **accion**: botones del panel (completar, borrar, olvidar)\n- **avisos**: recordatorios que ya tocan (cada uno sale una sola vez)\n- **configurar**: valida la clave de Gemini y elige modelos",
+        "width": 520,
+        "height": 280
+      }
+    },
+    {
+      "id": "9ffa9051-8351-484f-9d1f-9e6131e30cda",
+      "name": "Salud",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "75772d1f-fc19-4e2c-b91d-476c3df51599",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "adx/salud",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "2601144f-e96b-4b2a-9bfd-993af1924f1a",
+      "name": "Estoy listo",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, nombre: \"AssistentD\" } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "4516e5f4-6fd3-42d4-bd49-085339bf07f6",
+      "name": "Pedir panel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "56b5faf3-b6f9-48e0-85ba-61c2ea4d88ff",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "adx/panel",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "02a6866f-8d7e-4565-914a-8c267de15f1a",
+      "name": "Leer panel",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.panel($1, $2) AS p;",
+        "options": {
+          "queryReplacement": "={{ $json.query.desde || '' }}, {{ $json.query.hasta || '' }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "3481570d-bd1e-4e96-a593-ce4c36e57933",
+      "name": "Enviar panel",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.p }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "24f82fa4-55fd-4d21-a2a4-27efcf63e569",
+      "name": "Acción del panel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "a06d3df6-35f6-4cb0-8736-9889e3686101",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "adx/accion",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "8a40f40e-6742-4699-a49d-b629930ef958",
+      "name": "Ejecutar acción",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        240,
+        400
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.accion($1, $2::jsonb) AS r;",
+        "options": {
+          "queryReplacement": "={{ String($json.body.tipo || '') }}, {{ JSON.stringify($json.body.datos || {}) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "06f7e740-de50-4649-bc9e-04a9bf725991",
+      "name": "Resultado acción",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        400
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.r }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "528aea23-3591-4d6a-99ea-dcc53d70e30f",
+      "name": "Pedir avisos",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        600
+      ],
+      "webhookId": "3a25fc0f-cd8c-4acc-8be6-934164f039ce",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "adx/avisos",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "1bdbdb90-c14a-4a3c-8716-775f6a80a1b4",
+      "name": "Avisos que tocan",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        240,
+        600
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.avisos_pendientes() AS avisos;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "6186f622-450f-402c-ba17-0cffb7011f08",
+      "name": "Enviar avisos",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        600
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { avisos: $json.avisos } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "cb7c0c5c-476d-4143-8f58-2885ff7a7982",
+      "name": "Configurar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        800
+      ],
+      "webhookId": "c8a172bd-7f5f-46fb-b60e-5c545013a539",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "adx/configurar",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "97d1d927-f344-4f42-b528-2d146c11d42d",
+      "name": "Probar clave de Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Comprueba la clave de Gemini y elige los mejores modelos gratuitos disponibles\nconst datos = $input.first().json.body || {};\nconst api = 'https://generativelanguage.googleapis.com/v1beta';\nconst clave = String(datos.clave || '').trim();\n\nif (!clave) return [{ json: { ok: true, datos, modelo: '' } }];   // solo actualiza nombre o \"sobre mí\"\n\nlet r;\ntry {\n  r = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `${api}/models?pageSize=1000`,\n    headers: { 'x-goog-api-key': clave },\n    json: true,\n    timeout: 20000,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n} catch (err) {\n  return [{ json: { ok: false, error: 'No pude llegar a Google. Revisa la conexión a internet.' } }];\n}\nif (r.statusCode !== 200) {\n  return [{ json: { ok: false, error: 'Google rechazó la clave. Revisa que la copiaste completa (empieza por AIza).' } }];\n}\n\nconst nombres = (r.body.models || [])\n  .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))\n  .map((m) => String(m.name).replace(/^models\\//, ''));\n\n// Solo modelos \"flash\" de texto: rápidos y con plan gratuito\nconst candidatos = nombres.filter((n) => /^gemini-\\d+(\\.\\d+)?-flash/.test(n) && !/(image|tts|audio|live|native|thinking|exp|robotics|computer)/.test(n));\nconst version = (n) => parseFloat((n.match(/^gemini-(\\d+(?:\\.\\d+)?)/) || [])[1] || '0');\nconst puntaje = (n) => {\n  let s = version(n) * 10;\n  if (/-lite/.test(n)) s -= 100;            // los \"lite\" quedan de respaldo\n  if (/preview/.test(n)) s -= 8;            // preferir versiones estables\n  if (/-\\d{2,3}(-\\d{2})?$/.test(n)) s -= 1; // sin fecha al final es mejor\n  return s;\n};\nlet modelos = [...new Set(candidatos)].sort((a, b) => puntaje(b) - puntaje(a) || a.length - b.length).slice(0, 4);\nif (!modelos.length && nombres.includes('gemini-flash-latest')) modelos = ['gemini-flash-latest'];\nif (!modelos.length) return [{ json: { ok: false, error: 'La clave funciona, pero no tiene acceso a modelos Gemini Flash.' } }];\n\nreturn [{ json: { ok: true, modelo: modelos[0], datos: { ...datos, clave, modelos } } }];\n"
+      }
+    },
+    {
+      "id": "afd21c06-e583-4931-85aa-373f6e9b0be4",
+      "name": "¿Clave válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        800
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4aaa8c33-9841-44f2-8d49-4f5d4e41d429",
+              "leftValue": "={{ $json.ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "e6d7719c-7cb9-457e-ae60-c5b5c3654e44",
+      "name": "Guardar ajustes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        720,
+        720
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.configurar($1::jsonb) AS r, $2::text AS modelo;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.datos) }}, {{ $json.modelo || '' }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "e32a2532-4fb9-46a7-81f5-acb0e338aaf6",
+      "name": "Configurado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        720
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { listo: true, modelo: $json.modelo } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e011268d-3c8e-46e8-ae8c-b8671874bb55",
+      "name": "Clave rechazada",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        900
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { listo: false, error: $json.error } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Salud": {
+      "main": [
+        [
+          {
+            "node": "Estoy listo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir panel": {
+      "main": [
+        [
+          {
+            "node": "Leer panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer panel": {
+      "main": [
+        [
+          {
+            "node": "Enviar panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acción del panel": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar acción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar acción": {
+      "main": [
+        [
+          {
+            "node": "Resultado acción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir avisos": {
+      "main": [
+        [
+          {
+            "node": "Avisos que tocan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisos que tocan": {
+      "main": [
+        [
+          {
+            "node": "Enviar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar": {
+      "main": [
+        [
+          {
+            "node": "Probar clave de Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probar clave de Gemini": {
+      "main": [
+        [
+          {
+            "node": "¿Clave válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Clave válida?": {
+      "main": [
+        [
+          {
+            "node": "Guardar ajustes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clave rechazada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar ajustes": {
+      "main": [
+        [
+          {
+            "node": "Configurado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "a2d79996-42d2-4250-94ad-4d0b445f3295",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

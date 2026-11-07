@@ -1,0 +1,24 @@
+# AssistentD | puerta de entrada
+# Sirve el panel y pasa /api/... a los webhooks del motor (n8n).
+{
+	admin off
+}
+
+:80 {
+	encode gzip
+
+	handle_path /api/* {
+		rewrite * /webhook/adx{path}?{query}
+		reverse_proxy motor:5678 {
+			transport http {
+				read_timeout 3m
+			}
+		}
+	}
+
+	handle {
+		root * /srv/panel
+		header Cache-Control "no-cache"
+		file_server
+	}
+}

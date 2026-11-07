@@ -1,0 +1,13 @@
+# Claves locales (el lanzador crea este archivo solo)
+.env
+
+# Registros de ejecucion
+registro/
+*.log
+
+# Archivos del sistema y del editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+~$*

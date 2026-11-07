@@ -1,0 +1,273 @@
+{
+  "id": "adxRutinas000001",
+  "name": "AssistentD · Resumen del día",
+  "nodes": [
+    {
+      "id": "e8583aad-ccc2-49f7-a901-1aacb3b38c9b",
+      "name": "Nota 42bcf1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -260
+      ],
+      "parameters": {
+        "content": "## AssistentD | Resumen del día\nCada mañana a las 6:30 se escribe un resumen con el estilo de la persona.\nSi la computadora estaba apagada, el panel lo pide al abrirse (**/adx/boletin**).\nCon `?forzar=1` se vuelve a escribir.",
+        "width": 500,
+        "height": 200
+      }
+    },
+    {
+      "id": "32b1d5c5-dfcd-4747-a148-3ce9f77b0aec",
+      "name": "Cada mañana",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        280
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 30 6 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1373b7ba-3cb3-45ae-bb36-46b3aa029dc4",
+      "name": "Pedir el resumen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        280
+      ],
+      "parameters": {
+        "url": "http://127.0.0.1:5678/webhook/adx/boletin",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "0033becf-2859-4d3d-9802-d2774809fdc2",
+      "name": "Resumen solicitado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        40
+      ],
+      "webhookId": "497c5130-f6df-428b-9a15-337c2940b566",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "adx/boletin",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "17c479c2-51ca-47ff-a928-7be2c69589f2",
+      "name": "Datos del día",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        240,
+        40
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nucleo.datos_boletin($1::boolean) AS b;",
+        "options": {
+          "queryReplacement": "={{ String($json.query.forzar === '1') }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "476d6517-a795-42db-936e-456ce0705b23",
+      "name": "Escribir con Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "jsCode": "// Escribe el resumen del día con el estilo de la persona\nconst d = $input.first().json.b || {};\nif (d.existe && d.texto) return [{ json: { nuevo: false, texto: d.texto } }];\nif (!d.clave) return [{ json: { nuevo: false, texto: null } }];\n\nconst p = d.perfil || {};\nconst dia = d.dia || {};\nconst eventos = (dia.eventos || []).map((e) => `- ${e.hora} a ${e.hora_fin}: ${e.titulo} (${e.categoria}${e.prioridad === 1 ? ', importante' : ''})`);\nconst vencen = (dia.tareas_que_vencen || []).map((t) => '- ' + t.texto);\nconst pendientes = (d.pendientes || []).slice(0, 6).map((t) => '- ' + t.texto);\nconst libres = (dia.espacios_libres || []).map((h) => `${h.desde}-${h.hasta}`);\n\nconst estilo = [];\nif ((p.mensajes_vistos || 0) >= 2) {\n  estilo.push(p.formalidad > 0.65 ? 'trato de usted' : p.formalidad < 0.35 ? 'muy coloquial y cercano' : 'cercano, tuteando');\n  estilo.push(p.emojis > 0.4 ? 'con un par de emojis' : 'sin emojis');\n} else estilo.push('cálido, tuteando, sin emojis');\nfor (const v of Object.values(p.preferencias || {})) estilo.push(v);\n\nconst pedido = `Escribe el resumen de hoy (${dia.dia} ${dia.fecha}) para ${p.como_llamar || p.nombre || 'la persona'}.\nEstilo: ${estilo.join(', ')}. Máximo 5 líneas, texto simple sin títulos ni asteriscos.\nEmpieza con un saludo corto, menciona lo más importante del día y termina con una sugerencia útil (por ejemplo, usar un espacio libre para un pendiente).\n\nActividades de hoy:\n${eventos.join('\\n') || '- Ninguna'}\nPendientes que vencen hoy:\n${vencen.join('\\n') || '- Ninguno'}\nOtros pendientes:\n${pendientes.join('\\n') || '- Ninguno'}\nEspacios libres: ${libres.join(', ') || 'ninguno'}\nLo que sabes de la persona: ${(d.recuerdos || []).join('; ') || 'poco todavía'}`;\n\nconst api = 'https://generativelanguage.googleapis.com/v1beta';\nfor (const modelo of d.modelos || []) {\n  let r;\n  try {\n    r = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${api}/models/${modelo}:generateContent`,\n      headers: { 'x-goog-api-key': d.clave, 'Content-Type': 'application/json' },\n      body: { contents: [{ role: 'user', parts: [{ text: pedido }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 4096 } },\n      json: true, timeout: 60000, returnFullResponse: true, ignoreHttpStatusErrors: true,\n    });\n  } catch (err) { continue; }\n  if (r.statusCode !== 200) continue;\n  const partes = (((r.body.candidates || [])[0] || {}).content || {}).parts || [];\n  const texto = partes.filter((x) => x.text && !x.thought).map((x) => x.text).join('').trim();\n  if (texto) return [{ json: { nuevo: true, texto } }];\n}\nreturn [{ json: { nuevo: false, texto: null } }];\n"
+      }
+    },
+    {
+      "id": "621bf665-07e7-49a6-9590-ea95ead3fd0e",
+      "name": "¿Es nuevo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c359bf57-4518-4cb1-b8c3-91efd6d0a140",
+              "leftValue": "={{ $json.nuevo }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "1caf6838-d4bb-4db0-b186-9dce7472ee3e",
+      "name": "Guardar resumen",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        960,
+        -60
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (nucleo.guardar_boletin($1))->>'texto' AS texto;",
+        "options": {
+          "queryReplacement": "={{ $json.texto }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "adxBaseDatos0001",
+          "name": "Base AssistentD"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "id": "cec7a9fe-c1f4-4e27-a164-5cf23ebf6373",
+      "name": "Enviar resumen",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        40
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { texto: $json.texto } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Cada mañana": {
+      "main": [
+        [
+          {
+            "node": "Pedir el resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen solicitado": {
+      "main": [
+        [
+          {
+            "node": "Datos del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos del día": {
+      "main": [
+        [
+          {
+            "node": "Escribir con Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir con Gemini": {
+      "main": [
+        [
+          {
+            "node": "¿Es nuevo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es nuevo?": {
+      "main": [
+        [
+          {
+            "node": "Guardar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar resumen": {
+      "main": [
+        [
+          {
+            "node": "Enviar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Caracas",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "e8872582-e2dc-4738-b39b-6ab0f0038517",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

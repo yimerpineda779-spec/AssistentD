@@ -1,0 +1,36 @@
+ASSISTENTD
+Asistente personal con agenda inteligente (n8n + PostgreSQL + Gemini, en Docker)
+
+QUE NECESITA LA COMPUTADORA
+  1. Windows 10 u 11 con Docker Desktop instalado.
+  2. Internet.
+  3. Una clave gratuita de Gemini: https://aistudio.google.com/apikey
+
+COMO ENCENDERLO
+  1. Doble clic en "Encender AssistentD.cmd".
+     La primera vez descarga cerca de 700 MB y tarda unos minutos.
+  2. Se abre el panel. Escribe tu nombre, pega tu clave de Gemini
+     y, si quieres, cuéntale algo de ti.
+  3. Listo. Desde la segunda vez puedes usar el acceso directo
+     "AssistentD" que aparece en el escritorio.
+
+OTROS ARCHIVOS
+  Apagar AssistentD.cmd      Apaga todo. La agenda queda guardada.
+  Reiniciar AssistentD.cmd   Úsalo si algo se quedó trabado.
+
+DIRECCIONES
+  Panel:           http://localhost:7340
+  Editor de n8n:   http://localhost:5690
+  (La primera vez que abras el editor te pedirá crear un usuario.)
+
+QUE HAY EN CADA CARPETA
+  base/      Tablas y funciones de PostgreSQL (agenda, perfil, memoria)
+  motor/     Flujos de n8n y el script que los publica al encender
+  panel/     Interfaz web (HTML, CSS y JavaScript)
+  puerta/    Configuración de Caddy (une el panel con n8n)
+  sistema/   Lanzador para Windows
+
+NOTA PARA QUIEN EDITE LOS FLUJOS
+  Cada vez que se enciende, se vuelven a cargar los flujos de motor/flujos.
+  Si cambias un flujo en el editor de n8n, expórtalo y reemplaza el .json
+  correspondiente para que el cambio no se pierda.
